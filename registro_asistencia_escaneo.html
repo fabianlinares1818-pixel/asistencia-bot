@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Registro de Asistencia – Empresa XYZ</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.umd.min.js"></script>
+<script type="module">
+  import { BrowserMultiFormatReader } from "https://cdn.jsdelivr.net/npm/@zxing/library@0.19.1/esm5/index.min.js";
+  window.ZXing = { BrowserMultiFormatReader }; // Exportar globalmente
+</script>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; background: #f5f7fa; }
+  h2 { text-align: center; color: #003366; }
+  table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; }
+  th, td { border: 1px solid #ccc; padding: 5px; text-align: center; font-size: 13px; }
+  th { background-color: #005a9c; color: white; }
+  input { width: 95%; padding: 4px; }
+  canvas { border: 1px solid #ccc; width: 200px; height: 70px; }
+  button { margin-top: 5px; padding: 5px 10px; background: #005a9c; color: white; border: none; cursor: pointer; border-radius: 6px; font-size: 12px; }
+  button:hover { background: #0073e6; }
+  video { width: 100%; max-height: 300px; border: 1px solid #ccc; margin-top: 10px; }
+</style>
+</head>
+<body>
+<h2>Registro de Asistencia – Empresa XYZ</h2>
+<p style="text-align:center;">Fecha: <span id="fecha"></span></p>
+
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Nombre completo</th>
+      <th>Cédula</th>
+      <th>Teléfono</th>
+      <th>Actividad / Evento</th>
+      <th>Firma digital</th>
+      <th>📸 Leer documento</th>
+    </tr>
+  </thead>
+  <tbody id="tabla"></tbody>
+</table>
+
+<div style="text-align:center;">
+  <button onclick="generarPDF()">Generar PDF</button>
+</div>
+
+<!-- video oculto para escáner -->
+<video id="preview" style="display:none;" autoplay></video>
+
+<script>
+const { jsPDF } = window.jspdf;
+document.getElementById("fecha").textContent = new Date().toLocaleDateString();
+const tabla = document.getElementById("tabla");
+let pads = [];
+let lector;
+
+// Generar filas con campos, firma y botón de escaneo
+for (let i = 1; i <= 10; i++) {
+  const fila = document.createElement("tr");
+  fila.innerHTML = `
+    <td>${i}</td>
+    <td><input type="text" id="nombre${i}" placeholder="Nombre"></td>
+    <td><input type="text" id="cedula${i}" placeholder="Cédula"></td>
+    <td><input type="text" id="telefono${i}" placeholder="Teléfono"></td>
+    <td><input type="text" id="actividad${i}" placeholder="Actividad"></td>
+    <td><canvas id="firma${i}"></canvas></td>
+    <td><button onclick="leerDocumento(${i})">📸 Leer documento</button></td>
+  `;
+  tabla.appendChild(fila);
+}
+
+// Inicializar firmas
+for (let i = 1; i <= 10; i++) {
+  const canvas = document.getElementById(`firma${i}`);
+  pads.push(new SignaturePad(canvas));
+}
+
+// Escanear documento (QR o PDF417)
+async function leerDocumento(index) {
+  const { BrowserMultiFormatReader } = window.ZXing;
+  const video = document.getElementById("preview");
+  video.style.display = "block";
+  lector = new BrowserMultiFormatReader();
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cam = devices.find(d => d.kind === "videoinput");
+    if (!cam) return alert("No se detectó cámara.");
+
+    const result = await lector.decodeOnceFromVideoDevice(cam.deviceId, video);
+    const data = result.text;
+    video.style.display = "none";
+    lector.reset();
+    procesarLectura(index, data);
+  } catch (err) {
+    alert("Error leyendo documento: " + err);
+    video.style.display = "none";
+    lector.reset();
+  }
+}
+
+// Procesar texto del QR/PDF417 y rellenar campos
+function procesarLectura(index, data) {
+  console.log("Código leído:", data);
+  let nombre = "", cedula = "";
+
+  try {
+    // Si viene en JSON
+    const json = JSON.parse(data);
+    nombre = json.nombre || json.name || "";
+    cedula = json.cc || json.cedula || json.id || "";
+  } catch (e) {
+    // Si viene en texto plano
+    if (data.includes("|")) {
+      const partes = data.split("|");
+      nombre = partes[0]?.trim() || "";
+      cedula = partes[1]?.trim() || "";
+    } else {
+      const ccMatch = data.match(/\b\d{6,12}\b/);
+      const nameMatch = data.match(/[A-ZÁÉÍÓÚÑ\s]{4,}/);
+      cedula = ccMatch ? ccMatch[0] : "";
+      nombre = nameMatch ? nameMatch[0].trim() : "";
+    }
+  }
+
+  document.getElementById(`nombre${index}`).value = nombre;
+  document.getElementById(`cedula${index}`).value = cedula;
+  alert(`Documento leído correctamente.\nNombre: ${nombre}\nCédula: ${cedula}`);
+}
+
+// Generar PDF horizontal
+function generarPDF() {
+  const pdf = new jsPDF({ orientation: "landscape" });
+  pdf.setFontSize(12);
+  pdf.text("Registro de Asistencia – Empresa XYZ", 140, 15, { align: "center" });
+  pdf.text("Fecha: " + new Date().toLocaleString(), 20, 25);
+
+  let y = 40;
+  pdf.setFontSize(10);
+  for (let i = 1; i <= 10; i++) {
+    const nombre = document.getElementById(`nombre${i}`).value;
+    const cedula = document.getElementById(`cedula${i}`).value;
+    const telefono = document.getElementById(`telefono${i}`).value;
+    const actividad = document.getElementById(`actividad${i}`).value;
+    const firmaPad = pads[i - 1];
+
+    pdf.text(`${i}. ${nombre || ""}`, 10, y);
+    pdf.text(`CC: ${cedula || ""}`, 70, y);
+    pdf.text(`Tel: ${telefono || ""}`, 115, y);
+    pdf.text(`Actividad: ${actividad || ""}`, 160, y);
+
+    if (!firmaPad.isEmpty()) {
+      const firmaImg = firmaPad.toDataURL();
+      pdf.addImage(firmaImg, "PNG", 240, y - 10, 40, 20);
+    } else {
+      pdf.text("(Sin firma)", 245, y);
+    }
+
+    y += 25;
+    if (y > 180 && i < 10) {
+      pdf.addPage();
+      y = 40;
+    }
+  }
+
+  pdf.save("Registro_Asistencia.pdf");
+}
+</script>
+</body>
+</html>
